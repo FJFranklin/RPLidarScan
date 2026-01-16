@@ -19,6 +19,7 @@ if args.target == 'Elecrow':
     subwin_y       =    9
     subwin_width   =  890
     subwin_height  =  582
+    fontsize_large =   50
 else:
     display_title  = 'HyperPixel 4.0 Display'
     display_width  =  800
@@ -29,6 +30,10 @@ else:
     subwin_y       =    9
     subwin_width   =  686
     subwin_height  =  462
+    fontsize_large =   40
+
+subbtn_width  =  subwin_width - 20
+subbtn_height =  fontsize_large + 10
 
 icon_prefix = "icons/png/"
 icon_suffix = "-{w}x{h}.png".format(w=button_width, h=button_height)
@@ -80,6 +85,11 @@ class ImageButton(object):
     def __callback(sender, app_data, user_data):
         user_data.select()
 
+    def __add_large_button(self, label, callback):
+        button = dpg.add_button(label=label, callback=callback, width=subbtn_width, height=subbtn_height)
+        dpg.bind_item_font(button, font_large)
+        return button
+
     def add_button_and_window(self):
         dpg.add_image_button(self.ttag, label=self.name, user_data=self, callback=ImageButton.__callback,
                              width=button_width, height=button_height, tag=self.btag)
@@ -88,12 +98,15 @@ class ImageButton(object):
                         no_title_bar=True, show=False) as subwin:
             self.subwin = subwin
 
-            if self.name == "Shutdown":
+            if self.name == "Home":
                 ui_save = dpg.add_button(label="Save", callback=save_callback)
-                ui_exit = dpg.add_button(label="Exit", callback=exit_callback)
                 dpg.add_text("Hello world")
                 dpg.add_input_text(label="string")
                 dpg.add_slider_float(label="float")
+
+            if self.name == "Shutdown":
+                ui_exit = self.__add_large_button("Exit", exit_callback)
+                dpg.bind_item_theme(ui_exit, theme_caution)
 
 button_defs = [
     [ "Home",     "home" ],
@@ -107,7 +120,15 @@ with dpg.texture_registry(show=False):
     for bdef in button_defs:
         buttons.append(ImageButton(*bdef))
 
+with dpg.font_registry():
+    font_large = dpg.add_font("fonts/NotoSerifCJKjp-Medium.otf", fontsize_large)
+
+with dpg.theme() as theme_caution:
+    with dpg.theme_component(dpg.mvAll):
+        dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 0, 0), category=dpg.mvThemeCat_Core)
+
 with dpg.window(tag="Primary Window"):
+    #dpg.bind_font(font_large)
     with dpg.group() as ui_sidebar:
         for b in buttons:
             b.add_button_and_window()
@@ -123,12 +144,13 @@ if args.fullscreen:
 #The primary window fills the whole viewport
 dpg.set_primary_window("Primary Window", True)
 
+#Default to Home
 buttons[0].select()
 
 #Render Loop
-dpg.start_dearpygui() # to exit loop, use dpg.stop_dearpygui()
+#dpg.start_dearpygui() # to exit loop, use dpg.stop_dearpygui()
 #Equivalently:
-#while dpg.is_dearpygui_running():
-#    dpg.render_dearpygui_frame()
+while dpg.is_dearpygui_running():
+    dpg.render_dearpygui_frame()
 
 dpg.destroy_context()
