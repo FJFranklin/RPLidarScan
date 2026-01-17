@@ -1,3 +1,4 @@
+import time
 import argparse
 
 import dearpygui.dearpygui as dpg
@@ -38,13 +39,6 @@ subbtn_height =  fontsize_large + 10
 icon_prefix = "icons/png/"
 icon_suffix = "-{w}x{h}.png".format(w=button_width, h=button_height)
 
-def save_callback():
-    print("Save Clicked")
-
-def exit_callback():
-    dpg.stop_dearpygui()
-    print("Exit Clicked")
-
 dpg.create_context()
 
 class ImageButton(object):
@@ -69,17 +63,23 @@ class ImageButton(object):
         self.subwin = None
 
     def deselect(self):
-        print("Image button '" + self.name + "' deselected.")
         dpg.hide_item(self.subwin)
         ImageButton.active_IB = None
 
     def select(self):
-        print("Image button '" + self.name + "' pressed.")
         if ImageButton.active_IB is not None:
             ImageButton.active_IB.deselect()
 
         dpg.show_item(self.subwin)
         ImageButton.active_IB = self
+
+    @staticmethod
+    def __callback_save(): # demo code
+        print("Saving...")
+
+    @staticmethod
+    def __callback_exit():
+        dpg.stop_dearpygui()
 
     @staticmethod
     def __callback(sender, app_data, user_data):
@@ -99,13 +99,14 @@ class ImageButton(object):
             self.subwin = subwin
 
             if self.name == "Home":
-                ui_save = dpg.add_button(label="Save", callback=save_callback)
+                # demo code
+                ui_save = dpg.add_button(label="Save", callback=ImageButton.__callback_save)
                 dpg.add_text("Hello world")
                 dpg.add_input_text(label="string")
                 dpg.add_slider_float(label="float")
 
             if self.name == "Shutdown":
-                ui_exit = self.__add_large_button("Exit", exit_callback)
+                ui_exit = self.__add_large_button("Exit", ImageButton.__callback_exit)
                 dpg.bind_item_theme(ui_exit, theme_caution)
 
 button_defs = [
@@ -152,5 +153,6 @@ buttons[0].select()
 #Equivalently:
 while dpg.is_dearpygui_running():
     dpg.render_dearpygui_frame()
+    time.sleep(0.001)
 
 dpg.destroy_context()
