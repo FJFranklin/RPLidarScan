@@ -11,38 +11,48 @@ parser.add_argument('--fullscreen', help='Enter fullscreen display mode.',      
 
 args = parser.parse_args()
 
+# Can we get this padding from DearPyGui somehow?
+padding = 10
+
 if args.target == 'Elecrow':
     display_title  = 'Elecrow 7\" Display'
     display_width  = 1024
     display_height =  600
     button_width   =  100
-    button_height  =  100
-    subwin_x       =  125
-    subwin_y       =    9
-    subwin_width   =  890
-    subwin_height  =  582
     fontsize_small =   25
-    fontsize_large =   50
-    subwin_inset_x =  770
-    subwin_inset_y =   10
 else:
     display_title  = 'HyperPixel 4.0 Display'
     display_width  =  800
     display_height =  480
     button_width   =   80
-    button_height  =   80
-    subwin_x       =  105
-    subwin_y       =    9
-    subwin_width   =  686
-    subwin_height  =  462
     fontsize_small =   20
-    fontsize_large =   40
-    subwin_inset_x =  586
-    subwin_inset_y =   10
+
+# Square buttons, so
+button_height  = button_width
+
+# Main window for application
+subwin_x       = button_width + 25
+subwin_y       = padding
+subwin_width   = display_width  - subwin_x - padding
+subwin_height  = display_height - subwin_y - padding
+
+# Font for, e.g., large buttons
+fontsize_large = fontsize_small * 2
+
+# Side sub-menu
+subwin_inset_x = subwin_width - button_width - 2 * padding
+subwin_inset_y = padding
+
+# Main application window, not including inset
+canvas_width  = subwin_inset_x
+canvas_height = subwin_height - 2 * padding
+canvas_x   = int(canvas_width  / 2)
+canvas_y   = int(canvas_height / 2)
+canvas_min = min(canvas_x, canvas_y)
 
 # Large button
-subbtn_width  =  subwin_width - 20
-subbtn_height =  fontsize_large + 10
+subbtn_width  =  subwin_width - 2 * padding
+subbtn_height =  fontsize_large + padding
 
 icon_prefix = "icons/png/"
 icon_suffix = "-{w}x{h}.png".format(w=button_width, h=button_height)
@@ -50,18 +60,62 @@ icon_suffix = "-{w}x{h}.png".format(w=button_width, h=button_height)
 class UI_Lidar(object):
     @staticmethod
     def __callback_play_pause(sender, app_data, user_data):
-        pass
+        if user_data.playing:
+            user_data.pause()
+        else:
+            user_data.play()
+
+    def play(self):
+        if self.playing:
+            return
+        self.playing = True # TODO
+        if self.playing:
+            dpg.configure_item(self.pp_btag, texture_tag=icon_texture["Pause"])
+
+    def pause(self):
+        if not self.playing:
+            return
+        self.playing = False # TODO
+        if not self.playing:
+            dpg.configure_item(self.pp_btag, texture_tag=icon_texture["Play"])
+
+    def set_zoom(self, zoom):
+        self.zoom = zoom
+
+        if self.zoom < 12:
+            dpg.enable_item(self.zo_btag)
+        else:
+            self.zoom = 12
+            dpg.disable_item(self.zo_btag)
+
+        if self.zoom > 1:
+            dpg.enable_item(self.zi_btag)
+        else:
+            self.zoom = 1
+            dpg.disable_item(self.zi_btag)
+
+        dpg.set_value(self.zz_btag, "Range: {r}m".format(r=self.zoom))
 
     @staticmethod
     def __callback_zoom_in(sender, app_data, user_data):
-        pass
+        user_data.zoom_in()
+
+    def zoom_in(self):
+        if self.zoom > 1:
+            self.set_zoom(self.zoom - 1)
 
     @staticmethod
     def __callback_zoom_out(sender, app_data, user_data):
-        pass
+        user_data.zoom_out()
+
+    def zoom_out(self):
+        if self.zoom < 12:
+            self.set_zoom(self.zoom + 1)
 
     def __init__(self, subwin):
         self.subwin = subwin
+        self.zoom = 12
+        self.playing = False
 
         inset = dpg.add_group(parent=subwin, pos=(subwin_inset_x, subwin_inset_y))
 
@@ -70,31 +124,53 @@ class UI_Lidar(object):
         dpg.add_image_button(self.pp_ttag, label="Play", user_data=self, callback=UI_Lidar.__callback_play_pause,
                              width=button_width, height=button_height, tag=self.pp_btag, parent=inset)
 
+        dpg.add_spacer(height=button_height/2, parent=inset)
+
         self.zi_ttag = icon_texture["Zoom In"]
         self.zi_btag = 'b' + self.zi_ttag
         dpg.add_image_button(self.zi_ttag, label="Zoom In", user_data=self, callback=UI_Lidar.__callback_zoom_in,
                              width=button_width, height=button_height, tag=self.zi_btag, parent=inset)
 
         self.zz_btag = "bRangeText"
-        self.text = dpg.add_text("Range: 12m", parent=inset, tag=self.zz_btag)
-        dpg.bind_item_font(self.text, font_small)
+        dpg.add_text("Range: XXm", parent=inset, tag=self.zz_btag)
+        dpg.bind_item_font(self.zz_btag, font_small)
 
         self.zo_ttag = icon_texture["Zoom Out"]
         self.zo_btag = 'b' + self.zo_ttag
         dpg.add_image_button(self.zo_ttag, label="Zoom Out", user_data=self, callback=UI_Lidar.__callback_zoom_out,
                              width=button_width, height=button_height, tag=self.zo_btag, parent=inset)
 
+        self.set_zoom(12)
+
         with dpg.drawlist(parent=self.subwin, width=subwin_width, height=subwin_height-20) as dl:
             self.dl = dl
+            self.draw_grid()
             self.line = dpg.draw_line((10, 10), (100, 100), color=(255, 0, 0, 255), thickness=1)
 
+    def m_to_px(self, m):
+        return m / float(self.zoom) * canvas_min
+        
+    def draw_grid(self):
+        px_o = (canvas_x, canvas_y)
+        gray = (191, 191, 191, 255)
+        for ir in range(self.zoom):
+            px_r = self.m_to_px(ir + 1)
+            dpg.draw_circle(px_o, px_r, color=gray, thickness=2)
+        if self.zoom <= 2:
+            gray = (127, 127, 127, 255)
+            if self.zoom > 1:
+                for ir in range(9):
+                    px_r = self.m_to_px((ir + 1) * 0.1 + 1)
+                    dpg.draw_circle(px_o, px_r, color=gray, thickness=1)
+            for ir in range(9):
+                px_r = self.m_to_px((ir + 1) * 0.1)
+                dpg.draw_circle(px_o, px_r, color=gray, thickness=1)
+
     def update(self):
-        x0 = subwin_width / 2
-        y0 = subwin_height / 2
-        cr = min(subwin_width, subwin_height) * 0.45
-        tp = 6 * time.process_time()
-        cx = x0 + cr * math.cos(tp)
-        cy = y0 + cr * math.sin(tp)
+        cr = canvas_min
+        tp = 10 * time.process_time()
+        cx = canvas_x + cr * math.cos(tp)
+        cy = canvas_y + cr * math.sin(tp)
 
         #How to move an existing line:
         #dpg.configure_item(self.line, p1=(x0,y0), p2=(cx,cy))
@@ -104,7 +180,8 @@ class UI_Lidar(object):
 
         with dpg.drawlist(parent=self.subwin, width=subwin_width, height=subwin_height-20) as dl:
             self.dl = dl
-            self.line = dpg.draw_line((x0, y0), (cx, cy), color=(255, 0, 0, 255), thickness=1)
+            self.draw_grid()
+            self.line = dpg.draw_line((canvas_x, canvas_y), (cx, cy), color=(255, 0, 0, 255), thickness=1)
 
 class SideMenuButton(object):
     smb_active = None
