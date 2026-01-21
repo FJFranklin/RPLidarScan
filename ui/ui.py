@@ -1,6 +1,7 @@
 import time
 import math
 import argparse
+import asyncio
 
 import dearpygui.dearpygui as dpg
 
@@ -68,16 +69,23 @@ class UI_Lidar(object):
     def play(self):
         if self.playing:
             return
-        self.playing = True # TODO
+
+        self.lidar = RPLidar("/dev/ttyUSB0", 460800)
+
+        if self.lidar is not None:
+            self.playing = True
         if self.playing:
             dpg.configure_item(self.pp_btag, texture_tag=icon_texture["Pause"])
 
     def pause(self):
         if not self.playing:
             return
-        self.playing = False # TODO
-        if not self.playing:
-            dpg.configure_item(self.pp_btag, texture_tag=icon_texture["Play"])
+
+        if self.lidar is not None:
+            self.lidar.reset()
+
+        self.playing = False
+        dpg.configure_item(self.pp_btag, texture_tag=icon_texture["Play"])
 
     def set_zoom(self, zoom):
         self.zoom = zoom
@@ -116,6 +124,7 @@ class UI_Lidar(object):
         self.subwin = subwin
         self.zoom = 12
         self.playing = False
+        self.lidar = None
 
         inset = dpg.add_group(parent=subwin, pos=(subwin_inset_x, subwin_inset_y))
 
@@ -183,6 +192,10 @@ class UI_Lidar(object):
             self.draw_grid()
             self.line = dpg.draw_line((canvas_x, canvas_y), (cx, cy), color=(255, 0, 0, 255), thickness=1)
 
+    def app_will_end(self):
+        if self.playing:
+            self.pause()
+
 class SideMenuButton(object):
     smb_active = None
     smb_Home = None
@@ -199,6 +212,10 @@ class SideMenuButton(object):
 
         if self.name == "Home":
             SideMenuButton.smb_Home = self
+
+    def app_will_end(self):
+        if self.sub_ui is not None:
+            self.sub_ui.app_will_end()
 
     def deselect(self):
         dpg.hide_item(self.subwin)
@@ -326,10 +343,17 @@ SideMenuButton.smb_Home.select()
 #Render Loop
 #dpg.start_dearpygui() # to exit loop, use dpg.stop_dearpygui()
 #Equivalently:
-while dpg.is_dearpygui_running():
-    for b in sidemenu_buttons:
-        b.update()
-    dpg.render_dearpygui_frame()
-    time.sleep(0.001)
+async def main():
+    while dpg.is_dearpygui_running():
+        for b in sidemenu_buttons:
+            b.update()
+        dpg.render_dearpygui_frame()
+        await asyncio.sleep(0.001)
+
+asyncio.run(main())
+
+# tidy up and exit cleanly
+for b in sidemenu_buttons:
+    b.app_will_end()
 
 dpg.destroy_context()
