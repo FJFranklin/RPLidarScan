@@ -18,20 +18,21 @@ parser.add_argument('--devicetest', help='Test connection to RPLidar C1 device.'
 
 args = parser.parse_args()
 
-lidar = None
-if not os.path.exists(args.device):
-    print("RPLidarScan: RPLidar C1 device path '" + args.device + "' does not exist.")
-else:
-    # Initialize the RPLidar with the appropriate port and baudrate
-    try:
-        lidar = RPLidar(args.device, 460800)
-    except ConnectionError:
-        print("RPLidarScan: Unable to connect to RPLidar C1 device.")
-        lidar = None
-if lidar is not None:
-    print("RPLidarScan: Connected to RPLidar C1 at device path '" + args.device + "'.")
-
 if args.devicetest:
+    lidar = None
+    if not os.path.exists(args.device):
+        print("RPLidarScan: RPLidar C1 device path '" + args.device + "' does not exist.")
+    else:
+        # Initialize the RPLidar with the appropriate port and baudrate
+        try:
+            lidar = RPLidar(args.device, 460800)
+        except ConnectionError:
+            print("RPLidarScan: Unable to connect to RPLidar C1 device.")
+            lidar = None
+
+    if lidar is not None:
+        print("RPLidarScan: Connected to RPLidar C1 at device path '" + args.device + "'.")
+
     if lidar is None:
         sys.exit(0)
 
@@ -125,27 +126,44 @@ icon_suffix = "-{w}x{h}.png".format(w=button_width, h=button_height)
 class UI_Lidar(object):
     @staticmethod
     def __callback_play_pause(sender, app_data, user_data):
-        if user_data.playing:
+        if user_data.playing():
             user_data.pause()
         else:
             user_data.play()
 
-    def play(self):
-        if self.playing:
-            return
+    def __lidar_begin(self):
+        if not os.path.exists(args.device):
+            print("RPLidarScan: RPLidar C1 device path '" + args.device + "' does not exist.")
+        else:
+            # Initialize the RPLidar with the appropriate port and baudrate
+            try:
+                self.lidar = RPLidar(args.device, 460800)
+            except ConnectionError:
+                print("RPLidarScan: Unable to connect to RPLidar C1 device.")
+                self.lidar = None
 
-        self.playing = True
-        if self.playing:
-            dpg.configure_item(self.pp_btag, texture_tag=icon_texture["Pause"])
+        if self.lidar is not None:
+            print("RPLidarScan: Connected to RPLidar C1 at device path '" + args.device + "'.")
+            self.task_group.create_task(self.lidar.simple_scan(make_return_dict=True))
+            return True
+
+        return False
+
+    def playing(self):
+        return self.lidar is not None
+
+    def play(self):
+        if self.lidar is None:
+            if self.__lidar_begin():
+                dpg.configure_item(self.pp_btag, texture_tag=icon_texture["Pause"])
 
     def pause(self):
-        if not self.playing:
+        if self.lidar is None:
             return
 
-        if lidar is not None:
-            lidar.reset()
-
-        self.playing = False
+        self.lidar.stop_event.set()
+        self.lidar.reset()
+        self.lidar = None
         dpg.configure_item(self.pp_btag, texture_tag=icon_texture["Play"])
 
     def set_zoom(self, zoom):
@@ -184,7 +202,7 @@ class UI_Lidar(object):
     def __init__(self, subwin):
         self.subwin = subwin
         self.zoom = 12
-        self.playing = False
+        self.lidar = None
 
         inset = dpg.add_group(parent=subwin, pos=(subwin_inset_x, subwin_inset_y))
 
@@ -235,11 +253,20 @@ class UI_Lidar(object):
                 px_r = self.m_to_px((ir + 1) * 0.1)
                 dpg.draw_circle(px_o, px_r, color=gray, thickness=1)
 
+    def set_task_group(self, tg):
+        self.task_group = tg
+
     def update(self):
-        cr = canvas_min
-        tp = 10 * time.process_time()
-        cx = canvas_x + cr * math.cos(tp)
-        cy = canvas_y + cr * math.sin(tp)
+        # Remove any data in the queue (dist vs angle gets saved to the dict internally)
+        if self.lidar is not None:
+            while not self.lidar.output_queue.empty():
+                data = self.lidar.output_queue.get_nowait()
+                #print(f"Angle: {data['a_deg']}°, Distance: {data['d_mm']}mm, Quality: {data['q']}")
+
+        #cr = canvas_min
+        #tp = 10 * time.process_time()
+        #cx = canvas_x + cr * math.cos(tp)
+        #cy = canvas_y + cr * math.sin(tp)
 
         #How to move an existing line:
         #dpg.configure_item(self.line, p1=(x0,y0), p2=(cx,cy))
@@ -250,10 +277,26 @@ class UI_Lidar(object):
         with dpg.drawlist(parent=self.subwin, width=subwin_width, height=subwin_height-20) as dl:
             self.dl = dl
             self.draw_grid()
-            self.line = dpg.draw_line((canvas_x, canvas_y), (cx, cy), color=(255, 0, 0, 255), thickness=1)
+            #self.line = dpg.draw_line((canvas_x, canvas_y), (cx, cy), color=(255, 0, 0, 255), thickness=1)
+
+            if self.lidar is not None:
+                da = math.pi * 2 / 500 # angular resolution
+                for angle_deg, distance_mm in self.lidar.output_dict.items():
+                    if distance_mm is None:
+                        continue
+                    r = self.m_to_px(0.001 * distance_mm)
+                    a = math.radians(angle_deg - 90)
+                    c = math.cos(a)
+                    s = math.sin(a)
+
+                    cx = canvas_x + r * c
+                    cy = canvas_y + r * s
+                    dx = - r * da * s / 2
+                    dy =   r * da * c / 2
+                    dpg.draw_line((cx-dx, cy-dy), (cx+dx, cy+dy), color=(255, 0, 0, 255), thickness=1)
 
     def app_will_end(self):
-        if self.playing:
+        if self.lidar is not None:
             self.pause()
 
 class SideMenuButton(object):
@@ -326,6 +369,10 @@ class SideMenuButton(object):
             if self.name == "Shutdown":
                 ui_exit = self.__add_large_button("Exit", SideMenuButton.__callback_exit)
                 dpg.bind_item_theme(ui_exit, theme_caution)
+
+    def set_task_group(self, tg):
+        if self.sub_ui is not None:
+            self.sub_ui.set_task_group(tg)
 
     def update(self):
         if self.sub_ui is not None:
@@ -410,19 +457,12 @@ async def main_ui():
         dpg.render_dearpygui_frame()
         await asyncio.sleep(0.001)
 
-async def main_lidar(tg):
-    while dpg.is_dearpygui_running():
-        # Remove any data in the queue (dist vs angle gets saved to the dict internally)
-        while not lidar.output_queue.empty():
-            data = await lidar.output_queue.get()
-            #print(f"Angle: {data['a_deg']}°, Distance: {data['d_mm']}mm, Quality: {data['q']}")
-        await asyncio.sleep(0.001)
-
 async def main():
     async with asyncio.TaskGroup() as tg:
+        for b in sidemenu_buttons:
+            b.set_task_group(tg)
+
         tg.create_task(main_ui())
-        if lidar is not None:
-            tg.create_task(main_lidar(tg))
 
 asyncio.run(main())
 
