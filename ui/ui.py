@@ -1,3 +1,5 @@
+import sys
+import os.path
 import time
 import math
 import argparse
@@ -5,12 +7,74 @@ import asyncio
 
 import dearpygui.dearpygui as dpg
 
+from rplidarc1.scanner import RPLidar
+
 parser = argparse.ArgumentParser(description="Touchscreen GUI.")
 
+parser.add_argument('--device',     help='RPLider C1 device [/dev/rplidar].',               default='/dev/rplidar', type=str)
 parser.add_argument('--target',     help='Target display (Elecrow, HyperPixel) [Elecrow].', default='Elecrow', choices=['Elecrow', 'HyperPixel'])
 parser.add_argument('--fullscreen', help='Enter fullscreen display mode.',                  action='store_true')
+parser.add_argument('--devicetest', help='Test connection to RPLidar C1 device.',           action='store_true')
 
 args = parser.parse_args()
+
+lidar = None
+if not os.path.exists(args.device):
+    print("RPLidarScan: RPLidar C1 device path '" + args.device + "' does not exist.")
+else:
+    # Initialize the RPLidar with the appropriate port and baudrate
+    try:
+        lidar = RPLidar(args.device, 460800)
+    except ConnectionError:
+        print("RPLidarScan: Unable to connect to RPLidar C1 device.")
+        lidar = None
+if lidar is not None:
+    print("RPLidarScan: Connected to RPLidar C1 at device path '" + args.device + "'.")
+
+if args.devicetest:
+    if lidar is None:
+        sys.exit(0)
+
+    # Test code from https://github.com/dsaadatmandi/rplidarc1
+
+    async def process_scan_data():
+        # Start a scan with dictionary output
+        async with asyncio.TaskGroup() as tg:
+            # Create a task to stop scanning after 5 seconds
+            tg.create_task(wait_and_stop(5, lidar.stop_event))
+
+            # Create a task to process data from the queue
+            tg.create_task(process_queue(lidar.output_queue, lidar.stop_event))
+
+            # Start the scan with dictionary output
+            tg.create_task(lidar.simple_scan(make_return_dict=True))
+
+        # Access the scan data dictionary
+        print(lidar.output_dict)
+
+        # Reset the device
+        lidar.reset()
+
+    async def wait_and_stop(seconds, event):
+        await asyncio.sleep(seconds)
+        event.set()
+
+    async def process_queue(queue, stop_event):
+        while not stop_event.is_set():
+            if not queue.empty():
+                data = await queue.get()
+                # Process the data
+                print(f"Angle: {data['a_deg']}°, Distance: {data['d_mm']}mm, Quality: {data['q']}")
+            else:
+                await asyncio.sleep(0.1)
+
+    # Run the example
+    try:
+        asyncio.run(process_scan_data())
+    except KeyboardInterrupt:
+        lidar.reset()
+
+    sys.exit(0)
 
 # Can we get this padding from DearPyGui somehow?
 padding = 10
@@ -32,7 +96,7 @@ else:
 button_height  = button_width
 
 # Main window for application
-subwin_x       = button_width + 25
+subwin_x       = button_width + 2 * padding
 subwin_y       = padding
 subwin_width   = display_width  - subwin_x - padding
 subwin_height  = display_height - subwin_y - padding
@@ -70,10 +134,7 @@ class UI_Lidar(object):
         if self.playing:
             return
 
-        self.lidar = RPLidar("/dev/ttyUSB0", 460800)
-
-        if self.lidar is not None:
-            self.playing = True
+        self.playing = True
         if self.playing:
             dpg.configure_item(self.pp_btag, texture_tag=icon_texture["Pause"])
 
@@ -81,8 +142,8 @@ class UI_Lidar(object):
         if not self.playing:
             return
 
-        if self.lidar is not None:
-            self.lidar.reset()
+        if lidar is not None:
+            lidar.reset()
 
         self.playing = False
         dpg.configure_item(self.pp_btag, texture_tag=icon_texture["Play"])
@@ -124,7 +185,6 @@ class UI_Lidar(object):
         self.subwin = subwin
         self.zoom = 12
         self.playing = False
-        self.lidar = None
 
         inset = dpg.add_group(parent=subwin, pos=(subwin_inset_x, subwin_inset_y))
 
@@ -329,26 +389,40 @@ with dpg.window(tag="Primary Window"):
 dpg.create_viewport(title=display_title, width=display_width, height=display_height)
 dpg.setup_dearpygui()
 
-#Display the application-level window that everything sits inside
+# Display the application-level window that everything sits inside
 dpg.show_viewport()
 if args.fullscreen:
     dpg.toggle_viewport_fullscreen()
 
-#The primary window fills the whole viewport
+# The primary window fills the whole viewport
 dpg.set_primary_window("Primary Window", True)
 
-#Default to Home
+# Default to Home
 SideMenuButton.smb_Home.select()
 
-#Render Loop
+# Render Loop
 #dpg.start_dearpygui() # to exit loop, use dpg.stop_dearpygui()
-#Equivalently:
-async def main():
+# Equivalently:
+async def main_ui():
     while dpg.is_dearpygui_running():
         for b in sidemenu_buttons:
             b.update()
         dpg.render_dearpygui_frame()
         await asyncio.sleep(0.001)
+
+async def main_lidar(tg):
+    while dpg.is_dearpygui_running():
+        # Remove any data in the queue (dist vs angle gets saved to the dict internally)
+        while not lidar.output_queue.empty():
+            data = await lidar.output_queue.get()
+            #print(f"Angle: {data['a_deg']}°, Distance: {data['d_mm']}mm, Quality: {data['q']}")
+        await asyncio.sleep(0.001)
+
+async def main():
+    async with asyncio.TaskGroup() as tg:
+        tg.create_task(main_ui())
+        if lidar is not None:
+            tg.create_task(main_lidar(tg))
 
 asyncio.run(main())
 
