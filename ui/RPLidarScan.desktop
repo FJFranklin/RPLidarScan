@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+
+Name=RPLidarScan
+Exec=bash -c "cd `dirname %k`/RPLidarScan; python ui.py --admin --fullscreen --target HyperPixel"
+Comment=Visualiser for SlamTec RPLider C1 lidar
+
+Categories=Science;DataVisualization;Robotics;
+
+NoDisplay=false
