@@ -15,8 +15,11 @@ parser.add_argument('--device',     help='RPLider C1 device [/dev/rplidar].',   
 parser.add_argument('--target',     help='Target display (Elecrow, HyperPixel) [Elecrow].', default='Elecrow', choices=['Elecrow', 'HyperPixel'])
 parser.add_argument('--fullscreen', help='Enter fullscreen display mode.',                  action='store_true')
 parser.add_argument('--devicetest', help='Test connection to RPLidar C1 device.',           action='store_true')
+parser.add_argument('--admin',      help='Enable admin features.',                          action='store_true')
 
 args = parser.parse_args()
+
+shutdown_on_exit = False
 
 if args.devicetest:
     lidar = None
@@ -263,11 +266,6 @@ class UI_Lidar(object):
                 data = self.lidar.output_queue.get_nowait()
                 #print(f"Angle: {data['a_deg']}°, Distance: {data['d_mm']}mm, Quality: {data['q']}")
 
-        #cr = canvas_min
-        #tp = 10 * time.process_time()
-        #cx = canvas_x + cr * math.cos(tp)
-        #cy = canvas_y + cr * math.sin(tp)
-
         #How to move an existing line:
         #dpg.configure_item(self.line, p1=(x0,y0), p2=(cx,cy))
 
@@ -277,7 +275,6 @@ class UI_Lidar(object):
         with dpg.drawlist(parent=self.subwin, width=subwin_width, height=subwin_height-20) as dl:
             self.dl = dl
             self.draw_grid()
-            #self.line = dpg.draw_line((canvas_x, canvas_y), (cx, cy), color=(255, 0, 0, 255), thickness=1)
 
             if self.lidar is not None:
                 da = math.pi * 2 / 500 # angular resolution
@@ -332,12 +329,15 @@ class SideMenuButton(object):
         SideMenuButton.smb_active = self
 
     @staticmethod
-    def __callback_save(): # demo code
-        print("Saving...")
-
-    @staticmethod
     def __callback_exit():
         dpg.stop_dearpygui()
+
+    @staticmethod
+    def __callback_shutdown():
+        dpg.stop_dearpygui()
+
+        global shutdown_on_exit
+        shutdown_on_exit = True
 
     @staticmethod
     def __callback(sender, app_data, user_data):
@@ -356,19 +356,17 @@ class SideMenuButton(object):
                         no_title_bar=True, show=False) as subwin:
             self.subwin = subwin
 
-            if self.name == "Home":
-                # demo code
-                ui_save = dpg.add_button(label="Save", callback=SideMenuButton.__callback_save)
-                dpg.add_text("Hello world")
-                dpg.add_input_text(label="string")
-                dpg.add_slider_float(label="float")
+            #if self.name == "Home":
+                # TODO: Add
 
             if self.name == "Lidar":
                 self.sub_ui = UI_Lidar(self.subwin)
 
             if self.name == "Shutdown":
-                ui_exit = self.__add_large_button("Exit", SideMenuButton.__callback_exit)
-                dpg.bind_item_theme(ui_exit, theme_caution)
+                ui_exit = self.__add_large_button("Exit",     SideMenuButton.__callback_exit)
+                if args.admin:
+                    ui_shut = self.__add_large_button("Shutdown", SideMenuButton.__callback_shutdown)
+                    dpg.bind_item_theme(ui_shut, theme_caution)
 
     def set_task_group(self, tg):
         if self.sub_ui is not None:
@@ -471,3 +469,6 @@ for b in sidemenu_buttons:
     b.app_will_end()
 
 dpg.destroy_context()
+
+if args.admin and shutdown_on_exit:
+    os.system("shutdown -h now")
