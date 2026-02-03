@@ -5,6 +5,11 @@ import math
 import argparse
 import asyncio
 
+if sys.version_info.minor >= 11:
+    from asyncio import run, TaskGroup
+else:
+    from taskgroup import run, TaskGroup
+
 import dearpygui.dearpygui as dpg
 
 from rplidarc1.scanner import RPLidar
@@ -43,7 +48,7 @@ if args.devicetest:
 
     async def process_scan_data():
         # Start a scan with dictionary output
-        async with asyncio.TaskGroup() as tg:
+        async with TaskGroup() as tg:
             # Create a task to stop scanning after 5 seconds
             tg.create_task(wait_and_stop(5, lidar.stop_event))
 
@@ -74,7 +79,7 @@ if args.devicetest:
 
     # Run the example
     try:
-        asyncio.run(process_scan_data())
+        run(process_scan_data())
     except KeyboardInterrupt:
         lidar.reset()
 
@@ -456,13 +461,13 @@ async def main_ui():
         await asyncio.sleep(0.001)
 
 async def main():
-    async with asyncio.TaskGroup() as tg:
+    async with TaskGroup() as tg:
         for b in sidemenu_buttons:
             b.set_task_group(tg)
 
         tg.create_task(main_ui())
 
-asyncio.run(main())
+run(main())
 
 # tidy up and exit cleanly
 for b in sidemenu_buttons:
