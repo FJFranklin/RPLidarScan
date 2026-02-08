@@ -66,18 +66,18 @@ class UI_Lidar(object):
             user_data.play()
 
     def __lidar_begin(self):
-        if not os.path.exists(args.device):
-            print("RPLidarScan: RPLidar C1 device path '" + args.device + "' does not exist.")
+        if not os.path.exists(opt_device):
+            print("RPLidarScan: RPLidar C1 device path '" + opt_device + "' does not exist.")
         else:
             # Initialize the RPLidar with the appropriate port and baudrate
             try:
-                self.lidar = RPLidar(args.device, 460800)
+                self.lidar = RPLidar(opt_device, 460800)
             except ConnectionError:
                 print("RPLidarScan: Unable to connect to RPLidar C1 device.")
                 self.lidar = None
 
         if self.lidar is not None:
-            print("RPLidarScan: Connected to RPLidar C1 at device path '" + args.device + "'.")
+            print("RPLidarScan: Connected to RPLidar C1 at device path '" + opt_device + "'.")
             self.task_group.create_task(self.lidar.simple_scan(make_return_dict=True))
             return True
 
@@ -287,7 +287,7 @@ class SideMenuButton(object):
 
             if self.name == "Shutdown":
                 ui_exit = self.__add_large_button("Exit", SideMenuButton.__callback_exit)
-                if args.admin:
+                if opt_admin:
                     ui_shut = self.__add_large_button("Shutdown", SideMenuButton.__callback_shutdown)
                     dpg.bind_item_theme(ui_shut, self.ui.theme_caution)
 
@@ -300,9 +300,14 @@ class SideMenuButton(object):
             self.sub_ui.update()
 
 class UI():
-    def __init__(self):
+    def __init__(self, share_folder=None):
         # Can we get this padding from DearPyGui somehow?
         padding = 10
+
+        if share_folder is not None:
+            self.prefix = share_folder + '/'
+        else:
+            self.prefix = ""
 
         if opt_display == 'Elecrow':
             self.display_title  = 'Elecrow 7\" Display'
@@ -346,7 +351,8 @@ class UI():
         self.subbtn_width   = self.subwin_width - 2 * padding
         self.subbtn_height  = self.fontsize_large + padding
 
-        self.icon_prefix = "icons/png/"
+        self.font_prefix = self.prefix + "fonts/"
+        self.icon_prefix = self.prefix + "icons/png/"
         self.icon_suffix = "-{w}x{h}.png".format(w=self.button_width, h=self.button_height)
 
         self.icon_defs = [
@@ -395,8 +401,8 @@ class UI():
 
         # Add scaled fonts
         with dpg.font_registry():
-            self.font_small = dpg.add_font("fonts/NotoSerifCJKjp-Medium.otf", self.fontsize_small)
-            self.font_large = dpg.add_font("fonts/NotoSerifCJKjp-Medium.otf", self.fontsize_large)
+            self.font_small = dpg.add_font(self.font_prefix + "NotoSerifCJKjp-Medium.otf", self.fontsize_small)
+            self.font_large = dpg.add_font(self.font_prefix + "NotoSerifCJKjp-Medium.otf", self.fontsize_large)
 
         # Create custom theme
         with dpg.theme() as tc:
@@ -436,15 +442,22 @@ class UI():
 
         self.node = RPLidarScan_Node()
 
+    def update(self):
+        if self.node is not None:
+            if not rclpy.ok():
+                return False
+            rclpy.spin_once(self.node, timeout_sec=0)
+
+        for b in self.sidemenu_buttons:
+            b.update()
+
+        return True
+
     def run(self):
         async def main_loop(ui):
             while dpg.is_dearpygui_running():
-                if self.node is not None:
-                    if not rclpy.ok():
-                        break
-                    rclpy.spin_once(ui, timeout_sec=0)
-                for b in ui.sidemenu_buttons:
-                    b.update()
+                if not ui.update(): # returns false if should quit
+                    break
                 dpg.render_dearpygui_frame()
                 await asyncio.sleep(0.001)
 
@@ -476,7 +489,13 @@ class UI():
             os.system("shutdown -h now")
 
 def main(args=None):
-    ui = UI()
+    if ros2_client_mode:
+        from ament_index_python.packages import get_package_share_directory
+        share_folder = get_package_share_directory('rplidarscan_ui')
+    else:
+        share_folder = None
+
+    ui = UI(share_folder)
     ui.setup()
 
     if ros2_client_mode:
@@ -484,23 +503,23 @@ def main(args=None):
 
     ui.run()
 
-def device_test():
+def device_test(args):
     lidar = None
-    if not os.path.exists(args.device):
-        print("RPLidarScan: RPLidar C1 device path '" + args.device + "' does not exist.")
+    if not os.path.exists(opt_device):
+        print("RPLidarScan: RPLidar C1 device path '" + opt_device + "' does not exist.")
     else:
         # Initialize the RPLidar with the appropriate port and baudrate
         try:
-            lidar = RPLidar(args.device, 460800)
+            lidar = RPLidar(opt_device, 460800)
         except ConnectionError:
             print("RPLidarScan: Unable to connect to RPLidar C1 device.")
             lidar = None
 
     if lidar is not None:
-        print("RPLidarScan: Connected to RPLidar C1 at device path '" + args.device + "'.")
+        print("RPLidarScan: Connected to RPLidar C1 at device path '" + opt_device + "'.")
 
     if lidar is None:
-        sys.exit(0)
+        return
 
     # Test code from https://github.com/dsaadatmandi/rplidarc1
 
@@ -541,8 +560,6 @@ def device_test():
     except KeyboardInterrupt:
         lidar.reset()
 
-    sys.exit(0)
-
 if __name__ == '__main__':
     import argparse
 
@@ -558,12 +575,12 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    if args.devicetest:
-        device_test() # runs test and exits
-
     opt_device  = args.device
     opt_display = args.target
     opt_admin   = args.admin
     opt_fullscr = args.fullscreen
 
-    main()
+    if args.devicetest:
+        device_test(args) # runs test and exits
+    else:
+        main()

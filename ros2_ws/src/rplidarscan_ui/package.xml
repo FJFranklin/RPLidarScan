@@ -2,9 +2,9 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>rplidarscan_ui</name>
-  <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="fjf@alinameridon.com">fjf</maintainer>
+  <version>0.0.1</version>
+  <description>A simple user interface for the SlamTec RPLidar C1 intended for small touchscreens.</description>
+  <maintainer email="fjf@alinameridon.com">Francis James Franklin</maintainer>
   <license>Apache-2.0</license>
 
   <test_depend>ament_copyright</test_depend>
