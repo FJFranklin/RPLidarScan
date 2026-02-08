@@ -47,15 +47,23 @@ class RPLidarScan_Node(Node):
     def __init__(self):
         super().__init__('rplidarscan_ui')
         self.scan = self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
+        self.data_distance = {}
+        self.data_intensity = {}
 
     def scan_callback(self, msg):
-        count = int(msg.scan_time / msg.time_increment)
-        print("[SLLIDAR INFO]: I heard a laser scan " + msg.header.frame_id + "[{c}]:".format(c=count))
-        print("[SLLIDAR INFO]: angle_range : [{n}, {x}]".format(n=math.radians(msg.angle_min), x=math.radians(msg.angle_max)))
-
-        for i in range(count):
-            degree = math.radians(msg.angle_min + msg.angle_increment * i);
-            print("[SLLIDAR INFO]: angle-distance : [{d}, {r}]".format(d=degree, r=msg.ranges[i]))
+        rslen = len(msg.ranges)
+        data_distance = {}
+        data_intensity = {}
+        for i in range(rslen):
+            theta = msg.angle_min + (msg.angle_max - msg.angle_min) * i / (rslen - 1.0)
+            distance = msg.ranges[i]
+            if not math.isfinite(distance):
+                continue
+            data_distance[theta] = distance
+            if len(msg.intensities):
+                data_intensity[theta] = msg.intensities[i]
+        self.data_distance  = data_distance
+        self.data_intensity = data_intensity
 
 class UI_Lidar(object):
     @staticmethod
@@ -211,6 +219,19 @@ class UI_Lidar(object):
                         continue
                     r = self.m_to_px(0.001 * distance_mm)
                     a = math.radians(angle_deg - 90)
+                    c = math.cos(a)
+                    s = math.sin(a)
+
+                    cx = self.ui.canvas_x + r * c
+                    cy = self.ui.canvas_y + r * s
+                    dx = - r * da * s / 2
+                    dy =   r * da * c / 2
+                    dpg.draw_line((cx-dx, cy-dy), (cx+dx, cy+dy), color=(255, 0, 0, 255), thickness=1)
+            elif self.ui.node is not None:
+                da = math.pi * 2 / 500 # angular resolution
+                for angle_rad, distance_m in self.ui.node.data_distance.items():
+                    r = self.m_to_px(distance_m)
+                    a = math.pi / 2 - angle_rad
                     c = math.cos(a)
                     s = math.sin(a)
 
