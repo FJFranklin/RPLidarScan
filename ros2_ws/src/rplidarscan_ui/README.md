@@ -25,7 +25,7 @@ I believe this is a bug caused by DearPyGui trying to close the window on Window
 ## Requirements
 
 You will need:
-* [RPLidarC1](https://github.com/dsaadatmandi/rplidarc1)
+* [RPLidar C1](https://github.com/dsaadatmandi/rplidarc1)
 ```bash
 pip install rplidarc1
 ```
@@ -57,3 +57,10 @@ After building for the first time, don't forget to update the environment:
 ```bash
 source install/setup.bash
 ```
+
+## Event Loops
+
+Both ROS2 and DearPyGui are built around event loops, and the [RPLidar C1](https://github.com/dsaadatmandi/rplidarc1)
+implementation of the serial lidar uses Python's asyncio library to create an asynchronous read of lidar data.
+RPLidarScan UI is designed around asyncio as a result.
+I am grateful for Mostafa Farzan's advice [here](https://github.com/m2-farzan/ros2-asyncio).
