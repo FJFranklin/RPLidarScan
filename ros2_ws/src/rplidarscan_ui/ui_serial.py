@@ -27,7 +27,7 @@ parser.add_argument('--admin',      help='Enable admin features.',              
 args = parser.parse_args()
 
 if args.devicetest:
-    from RPLidarScan_Serial import L2D_device_test
+    from rplidarscan_ui.RPLidarScan_Serial import L2D_device_test
     L2D_device_test(args.device) # runs test and exits
 else:
     ui.ros2_client_mode = False

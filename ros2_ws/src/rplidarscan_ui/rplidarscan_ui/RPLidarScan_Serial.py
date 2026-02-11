@@ -22,10 +22,12 @@ else:
 
 from typing import Tuple
 
+import asyncio
+
 if sys.version_info.minor >= 11:
-    from asyncio import TaskGroup
+    from asyncio import TaskGroup, run
 else:
-    from taskgroup import TaskGroup
+    from taskgroup import TaskGroup, run
 
 from rplidarc1.scanner import RPLidar
 
