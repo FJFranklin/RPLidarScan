@@ -33,7 +33,7 @@ pip install rplidarc1
 ```bash
 pip install dearpygui
 ```
-    * For the Jetson Orin Nano, you can build DearPyGui from source - instructions
+* For the Jetson Orin Nano, you can build DearPyGui from source - instructions
 [here](https://github.com/hoffstadt/DearPyGui/wiki/Local-Wheel) - but for the Jetson:
 ```bash
 git clone --recursive https://github.com/hoffstadt/DearPyGui
