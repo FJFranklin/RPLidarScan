@@ -163,6 +163,7 @@ class UI_Lidar(UI_Component):
             return True # no need to update
 
         self.redraw = False
+        #self.lidar.L2D_analyse()
         distances, intensities = self.lidar.L2D_data
         dpg.delete_item(self.dl)
 

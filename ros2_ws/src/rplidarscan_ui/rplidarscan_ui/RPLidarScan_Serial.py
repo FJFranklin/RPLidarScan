@@ -49,6 +49,10 @@ class RPLidarScan_Serial(Lidar2D_DataManager):
         self.task_group: TaskGroup = None
         self.lidar: RPLidar = None
 
+        self.__quality = {}
+        self.__distance = {}
+        self.__last_angle = 0.0
+
     def set_task_group(self, task_group: TaskGroup) -> None:
         """Set the current asyncio event loop controller."""
         self.task_group = task_group
@@ -67,7 +71,7 @@ class RPLidarScan_Serial(Lidar2D_DataManager):
 
         if self.lidar is not None:
             print("RPLidarScan: Connected to RPLidar C1 at device path '" + self.device + "'.")
-            self.task_group.create_task(self.lidar.simple_scan(make_return_dict=True))
+            self.task_group.create_task(self.lidar.simple_scan(make_return_dict=False))
             return True
 
         return False
@@ -95,13 +99,17 @@ class RPLidarScan_Serial(Lidar2D_DataManager):
         data_received = False
         if self.lidar is not None:
             while not self.lidar.output_queue.empty():
-                _ = self.lidar.output_queue.get_nowait()
-                data_received = True
-
-            if data_received:
-                D = self.lidar.output_dict
-                I = {} # TODO: Do we have this?
-                self.L2D_data = D, I
+                measurement = self.lidar.output_queue.get_nowait()
+                a = measurement["a_deg"]
+                #print("{a}, ".format(a=a), end="")
+                if a < 5.0 and self.__last_angle > 355.0 and len(self.__distance) > 2:
+                    #print(len(self.__distance))
+                    self.L2D_data = self.__distance, self.__quality
+                    self.__quality = {}
+                    self.__distance = {}
+                self.__last_angle = a
+                self.__quality[a]  = measurement["q"]
+                self.__distance[a] = measurement["d_mm"]
 
         return True
 

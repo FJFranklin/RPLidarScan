@@ -18,6 +18,24 @@ import abc
 
 from typing import Tuple, Dict
 
+import numpy as np
+
+class UI_Component(abc.ABC):
+    @abc.abstractmethod
+    def update(self) -> bool:
+        """Update if necessary."""
+        pass
+
+    @abc.abstractmethod
+    def set_task_group(self, tg):
+        """Set the current asyncio event loop controller."""
+        pass
+
+    @abc.abstractmethod
+    def app_will_end(self):
+        """Notification that the application is ending."""
+        pass
+
 class Lidar2D_DataManager(abc.ABC):
     """An abstract base class for managing 2D lidar scan data
     """
@@ -69,18 +87,33 @@ class Lidar2D_DataManager(abc.ABC):
         """Notification that the application is ending."""
         pass
 
-class UI_Component(abc.ABC):
-    @abc.abstractmethod
-    def update(self) -> bool:
-        """Update if necessary."""
-        pass
+    def L2D_analyse(self) -> None:
+        count = len(self.__L2D_data_distances)
 
-    @abc.abstractmethod
-    def set_task_group(self, tg):
-        """Set the current asyncio event loop controller."""
-        pass
+        if count < 3:
+            print("no data")
+            return
+        else:
+            print("count={c} ".format(c=count), end="")
 
-    @abc.abstractmethod
-    def app_will_end(self):
-        """Notification that the application is ending."""
-        pass
+        D = np.ndarray((count, 4))
+        F = np.zeros((count, 1), dtype=np.uint8)
+
+        for i, (k, v) in enumerate(self.__L2D_data_distances.items()):
+            if self.__L2D_data_radians:
+                D[i,0] = k
+            else:
+                D[i,0] = np.radians(k)
+            if v is None:
+                D[i,1] = 12.0
+                F[i] = 0x01 # flag as out-of-range
+            else:
+                D[i,1] = v * self.__L2D_data_scaling
+        print("#oor={o} ".format(o=np.sum(F)), end="")
+
+        D[:,2] = D[:,1] * np.cos(D[:,0]) # x
+        D[:,3] = D[:,1] * np.sin(D[:,0]) # y
+
+        leftmost = np.argmin(D[:,2])
+        F[leftmost] |= 0x02 # flag as a hull point
+        print("left@{i} ".format(i=leftmost))
