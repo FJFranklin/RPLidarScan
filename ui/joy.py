@@ -1,9 +1,18 @@
+import sys
+import os
+import termios
+
 from enum import Enum
 
-from typing import Tuple, Callable
+from typing import Tuple, Callable, Dict
 
 import asyncio
 import aiofiles
+
+if sys.version_info.minor >= 11:
+    from asyncio import TaskGroup
+else:
+    from taskgroup import TaskGroup
 
 class GamepadKey(Enum):
     UNKNOWN       =  0
@@ -114,6 +123,55 @@ async def GamepadKeyLoop(buttonpress_handler: Callable = None, motion_handler: C
                     if not buttonpress_handler(key, press): # returns False if cycle should end
                         break
 
+async def GamepadKeyTask(D: Dict, buttonpress_handler: Callable = None, motion_handler: Callable = None):
+    async with aiofiles.open('/dev/input/js0', 'rb') as J:
+        while D["loop"]:
+            task = asyncio.create_task(J.read(8))
+            D["deviceread"] = task
+            await asyncio.gather(task)
+            D["deviceread"] = None
+            j = task.result()
+
+            key, press = GamepadKeyLookup(j[6], j[7], j[4:6])
+            if key == GamepadKey.MOTION:
+                if motion_handler is not None:
+                    t, s = GamepadKeyMotion(j[0:4], j[4:6])
+                    motion_handler(t, s)
+            elif key != GamepadKey.UNKNOWN:
+                if buttonpress_handler is not None:
+                    if not buttonpress_handler(key, press): # returns False if cycle should end
+                        D["loop"] = False
+
+async def KeyboardTask(D: Dict, keypress_handler: Callable = None):
+    current = termios.tcgetattr(sys.stdin.fileno())
+    try:
+        # Warning: This is Linux-specific
+        settings = termios.tcgetattr(sys.stdin)
+        settings[3] = settings[3] & ~(termios.ECHO | termios.ICANON | termios.ISIG) # no echo, canonical mode off, no signals like CTRL-C
+        settings[6][termios.VMIN ] = 0
+        settings[6][termios.VTIME] = 0
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
+
+        while D["loop"]:
+            key = os.read(sys.stdin.fileno(), 1)
+            if key is not None:
+                if len(key) > 0 and keypress_handler is not None:
+                    if not keypress_handler(key):
+                        D["loop"] = False
+                        task = D["deviceread"]
+                        if task is not None:
+                            task.cancel()
+            await asyncio.sleep(1E-3)
+
+    except KeyboardInterrupt: # Disabled via ISIG, but isn't generated anyway
+        print(" (raw-tty-interrupt)")
+    finally:
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, current)
+
+def demo_keypress_handler(key: bytes) -> bool:
+    print("(key)     {k} ({o})".format(k=key, o=ord(key)))
+    return not (ord(key) == 4 or ord(key) == 3) # ^c or ^d to exit
+
 def demo_motion_handler(seconds: float, state: float) -> None:
     print("(motion)  {s:6.3f} @time {t:.3f}s".format(s=state, t=seconds))
 
@@ -126,8 +184,16 @@ def demo_buttonpress_handler(key: GamepadKey, press_event: bool) -> bool:
 
     return not (press_event and key == GamepadKey.START)
 
+async def main_async(buttonpress_handler: Callable = None, motion_handler: Callable = None, keypress_handler: Callable = None):
+    async with TaskGroup() as tg:
+        D = { "loop": True, "taskgroup": tg, "deviceread": None }
+        tg.create_task(GamepadKeyTask(D, buttonpress_handler, motion_handler))
+        tg.create_task(KeyboardTask(D, keypress_handler))
+
 if __name__ == '__main__':
+    print("Press 'Start' on the gamepad to exit, or CTRL-C or CTRL-D followed by any gamepad action.")
     try:
-        asyncio.run(GamepadKeyLoop(demo_buttonpress_handler, demo_motion_handler))
+        asyncio.run(main_async(demo_buttonpress_handler, demo_motion_handler, demo_keypress_handler))
+        #asyncio.run(GamepadKeyLoop(demo_buttonpress_handler, demo_motion_handler))
     except KeyboardInterrupt:
         print(" (interrupt)")
